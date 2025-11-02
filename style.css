@@ -10,10 +10,11 @@ body {
 }
 
 canvas {
+    display:none;
     position: absolute
 }
 video{
-    /* display:none; */
+    display:none;
 }
 
 .progress-bar {
@@ -63,9 +64,10 @@ img.trolley {
     position: absolute;
     top: 0;
     left: 0;
-    width: 50vw;
-    height: 50vh;
+    width: 30vw;
+    height: 30vh;
     object-fit: contain; /* show full SVG within viewport */
     pointer-events: none; /* do not block interactions */
     z-index: 2;
+    transition: left 0.1s linear, top 0.1s linear;
 }
