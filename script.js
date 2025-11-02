@@ -110,11 +110,21 @@ function startDetection() {
 
     if (firstDetection && firstDetection.expressions) {
       const happyScore = firstDetection.expressions.happy || 0;
-      if (happyScore > 0.8) {
-        // Advance trolley; stronger happiness moves a bit faster
-        const step = happyScore >= 0.75 ? 2 : 1; // percent per tick
+      // Move trolley when NOT smiling (stops when you smile)
+      if (happyScore < 0.5) {
+        // Not smiling: red background, trolley moves
+        document.body.style.backgroundColor = 'red';
+        const step = 0.5;
         setTrolleyProgress(trolleyProgress + step);
+      } else {
+        // Smiling: white background, trolley stops
+        document.body.style.backgroundColor = 'white';
       }
+    } else {
+      // No face detected, keep moving with red background
+      document.body.style.backgroundColor = 'red';
+      const step = 0.5;
+      setTrolleyProgress(trolleyProgress + step);
     }
   }, 100);
 }

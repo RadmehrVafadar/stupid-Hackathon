@@ -1,5 +1,5 @@
 body {
-
+    background-color: red;
     margin: 0;
     padding: 0;
     width: 100vw;
@@ -7,6 +7,22 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
+    position: relative;
+}
+
+.smile-text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-family: 'Comic Sans MS', 'Comic Sans', cursive;
+    font-size: 10vw;
+    font-weight: bold;
+    color: white;
+    z-index: 0;
+    pointer-events: none;
+    user-select: none;
+    white-space: nowrap;
 }
 
 canvas {
