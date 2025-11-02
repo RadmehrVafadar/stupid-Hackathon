@@ -1,5 +1,7 @@
 const video = document.getElementById("video");
 const trolley = document.querySelector(".trolley");
+const kindLever = document.getElementById("kind-lever");
+const evilLever = document.getElementById("evil-lever");
 
 let trolleyProgress = 0; // 0..100
 let _prevTrolleyProgress = 0; // used to detect movement start/stop
@@ -380,8 +382,10 @@ function startDetection() {
       const happyScore = firstDetection.expressions.happy || 0;
       // Move trolley when NOT smiling (stops when you smile)
       if (happyScore < 0.5) {
-        // Not smiling: red background, trolley moves
+        // Not smiling: red background, trolley moves, show evil lever
         document.body.style.backgroundColor = "red";
+        if (kindLever) kindLever.classList.add("hidden");
+        if (evilLever) evilLever.classList.remove("hidden");
         // ensure happy music is stopped when not smiling
         try {
           happyManager.stop();
@@ -389,8 +393,10 @@ function startDetection() {
         const step = 0.125;
         setTrolleyProgress(trolleyProgress + step);
       } else {
-        // Smiling: white background, trolley stops
+        // Smiling: white background, trolley stops, show kind lever
         document.body.style.backgroundColor = "white";
+        if (kindLever) kindLever.classList.remove("hidden");
+        if (evilLever) evilLever.classList.add("hidden");
         // stop frantic sounds and start happy music when the user smiles
         try {
           soundManager.stop();
@@ -400,8 +406,10 @@ function startDetection() {
         } catch (e) {}
       }
     } else {
-      // No face detected, keep moving with red background
+      // No face detected, keep moving with red background, show evil lever
       document.body.style.backgroundColor = "red";
+      if (kindLever) kindLever.classList.add("hidden");
+      if (evilLever) evilLever.classList.remove("hidden");
       try {
         happyManager.stop();
       } catch (e) {}
