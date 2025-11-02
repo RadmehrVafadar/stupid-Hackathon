@@ -26,11 +26,23 @@ body {
 }
 
 canvas {
-    display:none;
-    position: absolute
+    position: absolute;
+    display: none;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 380px;
+    height: 280px;
+    z-index: 9999;
 }
 video{
-    display:none;
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 380px;
+    height: 280px;
+    z-index: 9998;
 }
 
 .progress-bar {
