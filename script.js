@@ -246,6 +246,95 @@ const happyManager = (function () {
   };
 })();
 
+// Game over manager: plays dontwannadie.mp3 and shows black overlay with Try Again button
+const gameOverManager = (function () {
+  const src = "assets/audio/scream.mp3";
+  let audio = null;
+  let overlay = null;
+
+  function createOverlay() {
+    if (overlay) return overlay;
+
+    overlay = document.createElement("div");
+    Object.assign(overlay.style, {
+      position: "fixed",
+      top: "0",
+      left: "0",
+      width: "100%",
+      height: "100%",
+      backgroundColor: "#000",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      opacity: "0",
+      transition: "opacity 2s ease-in",
+      zIndex: "10000",
+      pointerEvents: "none",
+    });
+
+    const button = document.createElement("button");
+    Object.assign(button.style, {
+      padding: "15px 30px",
+      fontSize: "24px",
+      backgroundColor: "#fff",
+      color: "#000",
+      border: "none",
+      borderRadius: "8px",
+      cursor: "pointer",
+      opacity: "0",
+      transform: "scale(0.95)",
+      transition: "opacity 0.3s ease-out, transform 0.3s ease-out",
+      marginTop: "20px",
+    });
+    button.textContent = "Try Again";
+    button.addEventListener("click", () => window.location.reload());
+
+    overlay.appendChild(button);
+    document.body.appendChild(overlay);
+
+    // Force reflow for transitions
+    overlay.offsetHeight;
+    overlay.style.opacity = "1";
+    overlay.style.pointerEvents = "all";
+
+    // Fade in button after overlay
+    setTimeout(() => {
+      button.style.opacity = "1";
+      button.style.transform = "scale(1)";
+    }, 800);
+
+    return overlay;
+  }
+
+  return {
+    play() {
+      // Create and show overlay
+      createOverlay();
+
+      // Stop other sounds
+      try {
+        soundManager.stop();
+      } catch (e) {}
+      try {
+        happyManager.stop();
+      } catch (e) {}
+
+      // Play game over sound
+      try {
+        if (audio) return;
+        audio = new Audio(src);
+        audio.play().catch(() => {});
+      } catch (e) {
+        console.warn("gameOverManager.play failed", e);
+      }
+    },
+    isActive() {
+      return !!overlay;
+    },
+  };
+})();
+
 // Direction settings (change these to control trolley movement)
 const DIRECTION_X = 1; // 1 = right, -1 = left, 0 = no horizontal movement
 const DIRECTION_Y = 0.65; // 1 = down, -1 = up, 0 = no vertical movement
@@ -259,17 +348,30 @@ function clamp(min, value, max) {
 function setTrolleyProgress(percent) {
   const clamped = clamp(0, percent, 100);
   const startedMoving = clamped > _prevTrolleyProgress;
+  const wasGameOver = trolleyProgress >= 85; // check if we were already at the end
   trolleyProgress = clamped;
   updateTrolleyPosition();
-  // inform sound manager about progress so overlays change behavior
-  try {
-    soundManager.setProgress(trolleyProgress);
-  } catch (e) {}
 
-  if (startedMoving) {
+  // Check for game over
+  if (trolleyProgress >= 85 && !wasGameOver && !gameOverManager.isActive()) {
     try {
-      soundManager.start();
+      gameOverManager.play();
     } catch (e) {}
+    return;
+  }
+
+  // Only update sounds if we haven't reached game over
+  if (!gameOverManager.isActive()) {
+    // inform sound manager about progress so overlays change behavior
+    try {
+      soundManager.setProgress(trolleyProgress);
+    } catch (e) {}
+
+    if (startedMoving) {
+      try {
+        soundManager.start();
+      } catch (e) {}
+    }
   }
 
   _prevTrolleyProgress = trolleyProgress;
@@ -390,7 +492,7 @@ function startDetection() {
         try {
           happyManager.stop();
         } catch (e) {}
-        const step = 0.125;
+        const step = 0.32;
         setTrolleyProgress(trolleyProgress + step);
       } else {
         // Smiling: white background, trolley stops, show kind lever
@@ -413,7 +515,7 @@ function startDetection() {
       try {
         happyManager.stop();
       } catch (e) {}
-      const step = 0.5;
+      const step = 0.32;
       setTrolleyProgress(trolleyProgress + step);
     }
   }, 100);
