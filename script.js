@@ -4,92 +4,170 @@ const trolley = document.querySelector(".trolley");
 let trolleyProgress = 0; // 0..100
 let _prevTrolleyProgress = 0; // used to detect movement start/stop
 
-// Sound manager: plays frantic, panned, random sounds from assets/audio when trolley moves
+// Sound manager: background choochoo loop + overlay cries/smile clips
 const soundManager = (function () {
   const audioFolder = "assets/audio";
-  // local filenames found in the repository; if you add/remove files, update this list
-  const files = [
-    "wifen4kids.mp3",
-    "smile.mp3",
-    "pleasesmile2.mp3",
+  const backgroundFile = "choochoo.mp3";
+  const occasionalFiles = ["smile.mp3"]; // played rarely below/above midpoint
+  const happyTune = "behappy.mp3";
+  const cries = [
     "pleasesmile1.mp3",
-    "choochoo.mp3",
+    "pleasesmile2.mp3",
+    "wifen4kids.mp3",
+    "dontwannadie.mp3",
   ];
 
   let audioCtx = null;
-  let currentAudio = null;
+  let bgAudio = null;
+  let bgSource = null;
+  let bgPanNode = null;
+  let bgGainNode = null;
+  let overlayTimer = null;
   let playing = false;
-  let currentSource = null;
+  let currentProgress = 0; // 0..100
 
   function ensureCtx() {
     if (!audioCtx)
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   }
 
-  function cleanupCurrent() {
+  function startBackgroundLoop() {
     try {
-      if (currentAudio) {
-        currentAudio.onended = null;
-        currentAudio.pause();
-        currentAudio.src = "";
-        currentAudio = null;
+      if (bgAudio) return;
+      bgAudio = new Audio(`${audioFolder}/${backgroundFile}`);
+      bgAudio.loop = true;
+      bgAudio.crossOrigin = "anonymous";
+      bgAudio.volume = 0.7;
+
+      ensureCtx();
+      try {
+        bgSource = audioCtx.createMediaElementSource(bgAudio);
+        bgPanNode = audioCtx.createStereoPanner();
+        bgPanNode.pan.value = (Math.random() * 2 - 1) * 0.5; // gentle pan
+        bgGainNode = audioCtx.createGain();
+        bgGainNode.gain.value = 0.6;
+        bgSource
+          .connect(bgPanNode)
+          .connect(bgGainNode)
+          .connect(audioCtx.destination);
+      } catch (e) {
+        // fallback: don't use nodes
+        bgSource = null;
       }
-      if (currentSource) {
+
+      const tryPlay = () => {
+        bgAudio.play().catch(() => {
+          if (audioCtx && audioCtx.state === "suspended") {
+            audioCtx.resume().then(() => bgAudio.play().catch(() => {}));
+          }
+        });
+      };
+      tryPlay();
+    } catch (e) {
+      console.warn("soundManager: failed to start background loop", e);
+    }
+  }
+
+  function stopBackgroundLoop() {
+    try {
+      if (bgAudio) {
+        bgAudio.pause();
+        bgAudio.src = "";
+        bgAudio = null;
+      }
+      if (bgSource) {
         try {
-          currentSource.disconnect();
+          bgSource.disconnect();
         } catch (e) {}
-        currentSource = null;
+        bgSource = null;
+      }
+      if (bgPanNode) {
+        try {
+          bgPanNode.disconnect();
+        } catch (e) {}
+        bgPanNode = null;
+      }
+      if (bgGainNode) {
+        try {
+          bgGainNode.disconnect();
+        } catch (e) {}
+        bgGainNode = null;
       }
     } catch (e) {
       // ignore
     }
   }
 
-  function playRandom() {
-    if (!playing) return;
-    const file = files[Math.floor(Math.random() * files.length)];
-    cleanupCurrent();
-
+  function playOverlay(file) {
+    if (!file) return;
     const audio = new Audio(`${audioFolder}/${file}`);
     audio.crossOrigin = "anonymous";
-    // make it frantic: speed it up a bit
-    audio.playbackRate = 1 + Math.random() * 0.8; // 1.0 .. 1.8
-    // small variation in volume
-    const vol = 0.7 + Math.random() * 0.6; // 0.7 .. 1.3 (we'll cap later)
+    // make it frantic: small variation in speed
+    audio.playbackRate = 1 + Math.random() * 0.6; // 1.0 .. 1.6
+    const vol = 0.7 + Math.random() * 0.6;
 
     ensureCtx();
-    // create nodes
     try {
       const src = audioCtx.createMediaElementSource(audio);
       const pan = audioCtx.createStereoPanner();
-      pan.pan.value = (Math.random() * 2 - 1) * 0.9; // -0.9 .. +0.9
+      pan.pan.value = (Math.random() * 2 - 1) * 0.95; // wide pan
       const gain = audioCtx.createGain();
       gain.gain.value = Math.min(1.0, vol);
       src.connect(pan).connect(gain).connect(audioCtx.destination);
-      currentSource = src;
     } catch (e) {
-      // Some browsers disallow createMediaElementSource until user gesture; fall back to plain audio element
-      currentSource = null;
+      // fallback: no nodes
     }
 
-    currentAudio = audio;
-    // Play and ensure AudioContext resumed if needed
-    const tryPlay = () => {
-      audio.play().catch(() => {
-        // resume and retry once
-        if (audioCtx && audioCtx.state === "suspended") {
-          audioCtx.resume().then(() => audio.play().catch(() => {}));
+    audio.play().catch(() => {
+      if (audioCtx && audioCtx.state === "suspended") {
+        audioCtx.resume().then(() => audio.play().catch(() => {}));
+      }
+    });
+    // no need to keep reference; audio element will be GC'd after playing
+  }
+
+  function scheduleOverlayLoop() {
+    if (overlayTimer) return; // already scheduled
+
+    const runOnce = () => {
+      if (!playing) {
+        overlayTimer = null;
+        return;
+      }
+
+      // decide which overlays to play depending on progress
+      const p = Math.random();
+      if (currentProgress > 50) {
+        // halfway+: keep choochoo loop running (already) and add cries frequently
+        if (p < 0.75) {
+          // play a cry
+          const cry = cries[Math.floor(Math.random() * cries.length)];
+          playOverlay(cry);
+        } else if (p < 0.9) {
+          // sometimes play the smile clip
+          playOverlay(occasionalFiles[0]);
         }
-      });
+        // schedule next sooner
+        const next = 250 + Math.random() * 900;
+        overlayTimer = setTimeout(runOnce, next);
+      } else {
+        // below halfway: chug choochoo loop; occasionally play smile
+        if (p < 0.12) {
+          playOverlay(occasionalFiles[0]);
+        }
+        const next = 1000 + Math.random() * 3000;
+        overlayTimer = setTimeout(runOnce, next);
+      }
     };
 
-    // small random delay between sounds to make it chaotic
-    audio.onended = () => {
-      if (!playing) return;
-      setTimeout(playRandom, 50 + Math.random() * 300);
-    };
+    runOnce();
+  }
 
-    tryPlay();
+  function stopOverlayLoop() {
+    if (overlayTimer) {
+      clearTimeout(overlayTimer);
+      overlayTimer = null;
+    }
   }
 
   return {
@@ -98,22 +176,70 @@ const soundManager = (function () {
       playing = true;
       ensureCtx();
       if (audioCtx.state === "suspended") {
-        // resuming may require a user gesture; we'll try to resume when playing
         audioCtx.resume().catch(() => {});
       }
-      playRandom();
+      startBackgroundLoop();
+      scheduleOverlayLoop();
     },
     stop() {
       if (!playing) return;
       playing = false;
-      cleanupCurrent();
+      stopOverlayLoop();
+      stopBackgroundLoop();
       if (audioCtx && audioCtx.state === "running") {
-        // suspend to be polite to the system
         audioCtx.suspend().catch(() => {});
       }
     },
     isPlaying() {
       return !!playing;
+    },
+    // allow external code to inform sound manager about trolley progress
+    setProgress(p) {
+      currentProgress = Math.max(0, Math.min(100, p || 0));
+      // if we're already playing, ensure overlay is scheduled
+      if (playing && !overlayTimer) scheduleOverlayLoop();
+    },
+  };
+})();
+
+// Happy music manager: plays behappy.mp3 on loop while the user is smiling
+const happyManager = (function () {
+  const src = "assets/audio/behappy.mp3";
+  let audio = null;
+  return {
+    start() {
+      try {
+        if (audio) return;
+        audio = new Audio(src);
+        audio.loop = true;
+        audio.crossOrigin = "anonymous";
+        audio.volume = 0.85;
+        // try to play and resume AudioContext if needed
+        audio.play().catch(() => {
+          if (window.AudioContext || window.webkitAudioContext) {
+            const ctx = new (window.AudioContext ||
+              window.webkitAudioContext)();
+            if (ctx.state === "suspended") ctx.resume().catch(() => {});
+            // we don't connect this audio into ctx to keep it simple
+            audio.play().catch(() => {});
+          }
+        });
+      } catch (e) {
+        console.warn("happyManager.start failed", e);
+      }
+    },
+    stop() {
+      try {
+        if (!audio) return;
+        audio.pause();
+        audio.src = "";
+        audio = null;
+      } catch (e) {
+        // ignore
+      }
+    },
+    isPlaying() {
+      return !!audio;
     },
   };
 })();
@@ -130,18 +256,18 @@ function clamp(min, value, max) {
 
 function setTrolleyProgress(percent) {
   const clamped = clamp(0, percent, 100);
-  // detect movement start: progress increased compared to previous tick
   const startedMoving = clamped > _prevTrolleyProgress;
   trolleyProgress = clamped;
   updateTrolleyPosition();
+  // inform sound manager about progress so overlays change behavior
+  try {
+    soundManager.setProgress(trolleyProgress);
+  } catch (e) {}
 
   if (startedMoving) {
-    // start frantic sounds when trolley starts moving
     try {
       soundManager.start();
-    } catch (e) {
-      /* ignore */
-    }
+    } catch (e) {}
   }
 
   _prevTrolleyProgress = trolleyProgress;
@@ -153,26 +279,23 @@ function updateTrolleyPosition() {
   const trackHeight = window.innerHeight;
   const trolleyWidth = trolley.getBoundingClientRect().width || 0;
   const trolleyHeight = trolley.getBoundingClientRect().height || 0;
-
   // Calculate max travel distance in each direction
   const maxTravelX =
     DIRECTION_X > 0 ? trackWidth - trolleyWidth - START_X : START_X;
   const maxTravelY =
     DIRECTION_Y > 0 ? trackHeight - trolleyHeight - START_Y : START_Y;
-
   // Calculate current position based on progress and direction
   const x =
     START_X + Math.round((trolleyProgress / 100) * maxTravelX * DIRECTION_X);
   const y =
     START_Y + Math.round((trolleyProgress / 100) * maxTravelY * DIRECTION_Y);
-
   trolley.style.left = x + "px";
   trolley.style.top = y + "px";
 }
 
 window.addEventListener("resize", updateTrolleyPosition);
 
-// Check if face-api is available
+// Check if face-api is available and load models
 if (typeof faceapi === "undefined") {
   console.error(
     "face-api.js not loaded! Make sure face-api.min.js loads before script.js"
@@ -259,21 +382,29 @@ function startDetection() {
       if (happyScore < 0.5) {
         // Not smiling: red background, trolley moves
         document.body.style.backgroundColor = "red";
+        // ensure happy music is stopped when not smiling
+        try {
+          happyManager.stop();
+        } catch (e) {}
         const step = 0.125;
         setTrolleyProgress(trolleyProgress + step);
       } else {
         // Smiling: white background, trolley stops
         document.body.style.backgroundColor = "white";
-        // stop frantic sounds when the user smiles
+        // stop frantic sounds and start happy music when the user smiles
         try {
           soundManager.stop();
-        } catch (e) {
-          /* ignore */
-        }
+        } catch (e) {}
+        try {
+          happyManager.start();
+        } catch (e) {}
       }
     } else {
       // No face detected, keep moving with red background
       document.body.style.backgroundColor = "red";
+      try {
+        happyManager.stop();
+      } catch (e) {}
       const step = 0.5;
       setTrolleyProgress(trolleyProgress + step);
     }
